@@ -1,0 +1,175 @@
+DNA
+
+#include <systemc.h>
+#include <iostream>
+
+// State Machine Module
+SC_MODULE(stateMachine) {
+    sc_in<char> input;
+    sc_in<bool> clk;
+
+    enum base {Start, G, GA, GAA, GAAG};
+    sc_signal<base> state;
+    int match_count;
+
+    SC_CTOR(stateMachine) : match_count(0) {
+        SC_METHOD(process);
+        sensitive << clk.pos();
+        dont_initialize();
+    }
+
+    void process() {
+        switch (state.read()) {
+            case Start:
+                if (input.read() == 'G') state.write(G);
+                break;
+            case G:
+                if (input.read() == 'A') state.write(GA);
+                else state.write(Start);
+                break;
+            case GA:
+                if (input.read() == 'A') state.write(GAA);
+                else state.write(Start);
+                break;
+            case GAA:
+                if (input.read() == 'G') {
+                    state.write(GAAG);
+                    match_count++;
+                    std::cout << "Pattern GAAG found at position: " << match_count * 4 << std::endl;
+                } else {
+                    state.write(Start);
+                }
+                break;
+            case GAAG:
+                state.write(Start);
+                break;
+        }
+    }
+};
+
+// Stimuli Module
+SC_MODULE(stimuli) {
+    sc_out<char> output;
+    sc_in<bool> clk;
+    const char* dna_sequence;
+    int index;
+
+    SC_CTOR(stimuli) : dna_sequence("AGTGAAGGGAAGCTGAAG"), index(0) {
+        SC_METHOD(generate);
+        sensitive << clk.pos();
+    }
+
+    void generate() {
+        if (dna_sequence[index] != '\0') {
+            output.write(dna_sequence[index]);
+            index++;
+        }
+    }
+};
+
+int sc_main(int argc, char* argv[]) {
+    sc_clock clk("clk", 10, SC_NS);
+    sc_signal<char> dna_input;
+    
+    stateMachine fsm("fsm");
+    fsm.input(dna_input);
+    fsm.clk(clk);
+
+    stimuli stim("stim");
+    stim.output(dna_input);
+    stim.clk(clk);
+    
+    sc_start(200, SC_NS);
+    return 0;
+}
+
+#include <systemc.h>
+#include <iostream>
+
+// State Machine Module
+SC_MODULE(stateMachine) {
+    sc_in<char> input;
+    sc_in<bool> clk;
+
+    enum base {Start, G, GA, GAA, GAAG};
+    sc_signal<base> state;
+    int match_count;
+    std::vector<int> match_positions;
+
+    SC_CTOR(stateMachine) : match_count(0) {
+        SC_METHOD(process);
+        sensitive << clk.pos();
+        dont_initialize();
+    }
+
+    void process() {
+        static int position = 0;
+        switch (state.read()) {
+            case Start:
+                if (input.read() == 'G') state.write(G);
+                position++;
+                break;
+            case G:
+                if (input.read() == 'A') state.write(GA);
+                else state.write(Start);
+                position++;
+                break;
+            case GA:
+                if (input.read() == 'A') state.write(GAA);
+                else state.write(Start);
+                position++;
+                break;
+            case GAA:
+                if (input.read() == 'G') {
+                    state.write(GAAG);
+                    match_count++;
+                    match_positions.push_back(position - 3);
+                    std::cout << "Pattern GAAG found at position: " << position - 3 << std::endl;
+                } else {
+                    state.write(Start);
+                }
+                position++;
+                break;
+            case GAAG:
+                state.write(Start);
+                position++;
+                break;
+        }
+    }
+};
+
+// Stimuli Module
+SC_MODULE(stimuli) {
+    sc_out<char> output;
+    sc_in<bool> clk;
+    const char* dna_sequence;
+    int index;
+
+    SC_CTOR(stimuli) : dna_sequence("AGTGAAGGGAAGCTGAAG"), index(0) {
+        SC_METHOD(generate);
+        sensitive << clk.pos();
+    }
+
+    void generate() {
+        if (dna_sequence[index] != '\0') {
+            output.write(dna_sequence[index]);
+            index++;
+        }
+    }
+};
+
+int sc_main(int argc, char* argv[]) {
+    sc_clock clk("clk", 10, SC_NS);
+    sc_signal<char> dna_input;
+    
+    stateMachine fsm("fsm");
+    fsm.input(dna_input);
+    fsm.clk(clk);
+
+    stimuli stim("stim");
+    stim.output(dna_input);
+    stim.clk(clk);
+    
+    sc_start(200, SC_NS);
+    return 0;
+}

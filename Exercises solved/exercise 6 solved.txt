@@ -1,0 +1,300 @@
+task single initialter and target 
+
+#include <systemc.h>
+#include <tlm.h>
+#include <tlm_utils/simple_target_socket.h>
+#include <tlm_utils/simple_initiator_socket.h>
+#include <iostream>
+#include <cstring>
+
+// TLM Memory Target Module
+template <unsigned int SIZE = 1024>
+SC_MODULE(memory) {
+    tlm_utils::simple_target_socket<memory> socket;
+    unsigned char mem[SIZE];
+
+    SC_CTOR(memory) : socket("socket") {
+        socket.register_b_transport(this, &memory::b_transport);
+    }
+
+    void b_transport(tlm::tlm_generic_payload &trans, sc_time &delay) {
+        tlm::tlm_command cmd = trans.get_command();
+        uint64 addr = trans.get_address();
+        unsigned char *data_ptr = trans.get_data_ptr();
+        unsigned int len = trans.get_data_length();
+
+        if (addr >= SIZE) {
+            SC_REPORT_FATAL("memory", "Address out of range");
+        }
+
+        if (cmd == tlm::TLM_READ_COMMAND) {
+            memcpy(data_ptr, &mem[addr], len);
+        } else if (cmd == tlm::TLM_WRITE_COMMAND) {
+            memcpy(&mem[addr], data_ptr, len);
+        }
+
+        delay += sc_time(20, SC_NS);
+        trans.set_response_status(tlm::TLM_OK_RESPONSE);
+    }
+};
+
+// TLM Processor Initiator Module
+SC_MODULE(processor) {
+    tlm_utils::simple_initiator_socket<processor> socket;
+    
+    SC_CTOR(processor) : socket("socket") {
+        SC_THREAD(process);
+    }
+    
+    void process() {
+        for (int i = 0; i < 5; i++) {
+            tlm::tlm_generic_payload trans;
+            sc_time delay = SC_ZERO_TIME;
+            unsigned char data[4] = {0xDE, 0xAD, 0xBE, 0xEF};
+            trans.set_command(tlm::TLM_WRITE_COMMAND);
+            trans.set_address(i * 4);
+            trans.set_data_ptr(data);
+            trans.set_data_length(4);
+            socket->b_transport(trans, delay);
+        }
+
+        for (int i = 0; i < 5; i++) {
+            tlm::tlm_generic_payload trans;
+            sc_time delay = SC_ZERO_TIME;
+            unsigned char data[4];
+            trans.set_command(tlm::TLM_READ_COMMAND);
+            trans.set_address(i * 4);
+            trans.set_data_ptr(data);
+            trans.set_data_length(4);
+            socket->b_transport(trans, delay);
+            std::cout << "Read Data: " << std::hex << (int)data[0] << " "
+                      << (int)data[1] << " " << (int)data[2] << " " << (int)data[3] << std::endl;
+        }
+    }
+};
+
+int sc_main(int argc, char* argv[]) {
+    processor cpu0("cpu0");
+    memory<1024> memory0("memory0");
+    
+    cpu0.socket.bind(memory0.socket);
+    
+    sc_start();
+    return 0;
+}
+
+multiple 
+
+#include <systemc.h>
+#include <tlm.h>
+#include <tlm_utils/simple_target_socket.h>
+#include <tlm_utils/simple_initiator_socket.h>
+#include <tlm_utils/simple_bus_socket.h>
+#include <iostream>
+#include <cstring>
+
+// TLM Memory Target Module
+template <unsigned int SIZE = 512>
+SC_MODULE(memory) {
+    tlm_utils::simple_target_socket<memory> socket;
+    unsigned char mem[SIZE];
+
+    SC_CTOR(memory) : socket("socket") {
+        socket.register_b_transport(this, &memory::b_transport);
+    }
+
+    void b_transport(tlm::tlm_generic_payload &trans, sc_time &delay) {
+        tlm::tlm_command cmd = trans.get_command();
+        uint64 addr = trans.get_address();
+        unsigned char *data_ptr = trans.get_data_ptr();
+        unsigned int len = trans.get_data_length();
+
+        if (addr >= SIZE) {
+            SC_REPORT_FATAL("memory", "Address out of range");
+        }
+
+        if (cmd == tlm::TLM_READ_COMMAND) {
+            memcpy(data_ptr, &mem[addr], len);
+        } else if (cmd == tlm::TLM_WRITE_COMMAND) {
+            memcpy(&mem[addr], data_ptr, len);
+        }
+
+        delay += sc_time(20, SC_NS);
+        trans.set_response_status(tlm::TLM_OK_RESPONSE);
+    }
+};
+
+// TLM Processor Initiator Module
+SC_MODULE(processor) {
+    tlm_utils::simple_initiator_socket<processor> socket;
+    std::string trace_file;
+    
+    SC_CTOR(processor) : socket("socket"), trace_file("stimuli1.txt") {
+        SC_THREAD(process);
+    }
+    
+    void process() {
+        for (int i = 0; i < 5; i++) {
+            tlm::tlm_generic_payload trans;
+            sc_time delay = SC_ZERO_TIME;
+            unsigned char data[4] = {0xDE, 0xAD, 0xBE, 0xEF};
+            trans.set_command(tlm::TLM_WRITE_COMMAND);
+            trans.set_address(i * 4);
+            trans.set_data_ptr(data);
+            trans.set_data_length(4);
+            socket->b_transport(trans, delay);
+        }
+    }
+};
+
+// TLM Bus Interconnect Module
+SC_MODULE(bus) {
+    tlm_utils::simple_target_socket<bus> target_socket;
+    tlm_utils::simple_initiator_socket<bus> initiator_socket0;
+    tlm_utils::simple_initiator_socket<bus> initiator_socket1;
+
+    SC_CTOR(bus) : target_socket("target_socket"),
+                   initiator_socket0("initiator_socket0"),
+                   initiator_socket1("initiator_socket1") {
+        target_socket.register_b_transport(this, &bus::b_transport);
+    }
+
+    void b_transport(tlm::tlm_generic_payload &trans, sc_time &delay) {
+        uint64 addr = trans.get_address();
+        if (addr < 512) {
+            initiator_socket0->b_transport(trans, delay);
+        } else {
+            trans.set_address(addr - 512);
+            initiator_socket1->b_transport(trans, delay);
+        }
+    }
+};
+
+int sc_main(int argc, char* argv[]) {
+    processor cpu0("cpu0");
+    processor cpu1("cpu1");
+    bus bus0("bus0");
+    memory<512> memory0("memory0");
+    memory<512> memory1("memory1");
+    
+    cpu0.socket.bind(bus0.target_socket);
+    cpu1.socket.bind(bus0.target_socket);
+    bus0.initiator_socket0.bind(memory0.socket);
+    bus0.initiator_socket1.bind(memory1.socket);
+    
+    sc_start();
+    return 0;
+}
+
+quantum
+ 
+#include <systemc.h>
+#include <tlm.h>
+#include <tlm_utils/simple_target_socket.h>
+#include <tlm_utils/simple_initiator_socket.h>
+#include <tlm_utils/simple_bus_socket.h>
+#include <tlm_utils/tlm_quantumkeeper.h>
+#include <iostream>
+#include <cstring>
+
+// TLM Memory Target Module
+template <unsigned int SIZE = 512>
+SC_MODULE(memory) {
+    tlm_utils::simple_target_socket<memory> socket;
+    unsigned char mem[SIZE];
+
+    SC_CTOR(memory) : socket("socket") {
+        socket.register_b_transport(this, &memory::b_transport);
+    }
+
+    void b_transport(tlm::tlm_generic_payload &trans, sc_time &delay) {
+        tlm::tlm_command cmd = trans.get_command();
+        uint64 addr = trans.get_address();
+        unsigned char *data_ptr = trans.get_data_ptr();
+        unsigned int len = trans.get_data_length();
+
+        if (addr >= SIZE) {
+            SC_REPORT_FATAL("memory", "Address out of range");
+        }
+
+        if (cmd == tlm::TLM_READ_COMMAND) {
+            memcpy(data_ptr, &mem[addr], len);
+        } else if (cmd == tlm::TLM_WRITE_COMMAND) {
+            memcpy(&mem[addr], data_ptr, len);
+        }
+
+        delay += sc_time(20, SC_NS);
+        trans.set_response_status(tlm::TLM_OK_RESPONSE);
+    }
+};
+
+// TLM Processor Initiator Module with Quantum Keeper
+SC_MODULE(processor) {
+    tlm_utils::simple_initiator_socket<processor> socket;
+    tlm_utils::tlm_quantumkeeper quantum_keeper;
+    std::string trace_file;
+    
+    SC_CTOR(processor) : socket("socket"), trace_file("stimuli1.txt") {
+        SC_THREAD(process);
+        quantum_keeper.set_global_quantum(sc_time(100, SC_NS));
+        quantum_keeper.reset();
+    }
+    
+    void process() {
+        for (int i = 0; i < 5; i++) {
+            tlm::tlm_generic_payload trans;
+            sc_time delay = SC_ZERO_TIME;
+            unsigned char data[4] = {0xDE, 0xAD, 0xBE, 0xEF};
+            trans.set_command(tlm::TLM_WRITE_COMMAND);
+            trans.set_address(i * 4);
+            trans.set_data_ptr(data);
+            trans.set_data_length(4);
+            
+            quantum_keeper.inc(sc_time(10, SC_NS));
+            quantum_keeper.sync();
+            
+            socket->b_transport(trans, delay);
+        }
+    }
+};
+
+// TLM Bus Interconnect Module
+SC_MODULE(bus) {
+    tlm_utils::simple_target_socket<bus> target_socket;
+    tlm_utils::simple_initiator_socket<bus> initiator_socket0;
+    tlm_utils::simple_initiator_socket<bus> initiator_socket1;
+
+    SC_CTOR(bus) : target_socket("target_socket"),
+                   initiator_socket0("initiator_socket0"),
+                   initiator_socket1("initiator_socket1") {
+        target_socket.register_b_transport(this, &bus::b_transport);
+    }
+
+    void b_transport(tlm::tlm_generic_payload &trans, sc_time &delay) {
+        uint64 addr = trans.get_address();
+        if (addr < 512) {
+            initiator_socket0->b_transport(trans, delay);
+        } else {
+            trans.set_address(addr - 512);
+            initiator_socket1->b_transport(trans, delay);
+        }
+    }
+};
+
+int sc_main(int argc, char* argv[]) {
+    processor cpu0("cpu0");
+    processor cpu1("cpu1");
+    bus bus0("bus0");
+    memory<512> memory0("memory0");
+    memory<512> memory1("memory1");
+    
+    cpu0.socket.bind(bus0.target_socket);
+    cpu1.socket.bind(bus0.target_socket);
+    bus0.initiator_socket0.bind(memory0.socket);
+    bus0.initiator_socket1.bind(memory1.socket);
+    
+    sc_start();
+    return 0;
+}
+
+

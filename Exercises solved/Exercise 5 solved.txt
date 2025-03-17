@@ -1,0 +1,91 @@
+#include <systemc.h>
+
+// Kahn Process Network Implementation using sc_fifo
+
+SC_MODULE(Add) {
+    sc_fifo_in<unsigned int> a, c;
+    sc_fifo_out<unsigned int> b;
+    
+    SC_CTOR(Add) {
+        SC_THREAD(process);
+    }
+    
+    void process() {
+        while (true) {
+            unsigned int x = a.read();
+            unsigned int y = c.read();
+            b.write(x + y);
+        }
+    }
+};
+
+SC_MODULE(Split) {
+    sc_fifo_in<unsigned int> b;
+    sc_fifo_out<unsigned int> a, d, e;
+    int count = 0;
+    
+    SC_CTOR(Split) {
+        SC_THREAD(process);
+    }
+    
+    void process() {
+        while (count < 10) {
+            unsigned int x = b.read();
+            a.write(x);
+            d.write(x);
+            e.write(x);
+            std::cout << "Output e: " << x << std::endl;
+            count++;
+        }
+        sc_stop();
+    }
+};
+
+SC_MODULE(Delay) {
+    sc_fifo_in<unsigned int> d;
+    sc_fifo_out<unsigned int> c;
+    
+    SC_CTOR(Delay) {
+        SC_THREAD(process);
+    }
+    
+    void process() {
+        while (true) {
+            unsigned int x = d.read();
+            c.write(x);
+        }
+    }
+};
+
+SC_MODULE(toplevel) {
+    sc_fifo<unsigned int> a_fifo, b_fifo, c_fifo, d_fifo, e_fifo;
+    Add add;
+    Split split;
+    Delay delay;
+    
+    SC_CTOR(toplevel) : add("add"), split("split"), delay("delay"), 
+                        a_fifo(10), b_fifo(10), c_fifo(10), d_fifo(10), e_fifo(10) {
+        
+        add.a.bind(a_fifo);
+        add.c.bind(c_fifo);
+        add.b.bind(b_fifo);
+        
+        split.b.bind(b_fifo);
+        split.a.bind(a_fifo);
+        split.d.bind(d_fifo);
+        split.e.bind(e_fifo);
+        
+        delay.d.bind(d_fifo);
+        delay.c.bind(c_fifo);
+        
+        // Initialize FIFOs
+        b_fifo.write(1);
+        c_fifo.write(0);
+    }
+};
+
+int sc_main(int argc, char* argv[]) {
+    toplevel t("t");
+    sc_start();
+    return 0;
+}

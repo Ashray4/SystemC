@@ -1,0 +1,658 @@
+Petri net a 
+#include <systemc.h>
+
+// Interface for the place
+class placeInterface : public sc_interface {
+public:
+    virtual void addTokens(unsigned int n) = 0;
+    virtual void removeTokens(unsigned int n) = 0;
+    virtual unsigned int testTokens() = 0;
+};
+
+// Implementation of place channel
+class place : public placeInterface {
+private:
+    unsigned int tokens;
+public:
+    place(unsigned int init_tokens) : tokens(init_tokens) {}
+
+    void addTokens(unsigned int n) override {
+        tokens += n;
+    }
+    
+    void removeTokens(unsigned int n) override {
+        if (tokens >= n) tokens -= n;
+    }
+    
+    unsigned int testTokens() override {
+        return tokens;
+    }
+};
+
+// Transition module
+SC_MODULE(transition) {
+    sc_port<placeInterface> in, out;
+    
+    SC_CTOR(transition) {}
+    
+    void fire() {
+        if (in->testTokens() > 0) {
+            std::cout << name() << ": Fired" << std::endl;
+            in->removeTokens(1);
+            out->addTokens(1);
+        } else {
+            std::cout << name() << ": NOT Fired" << std::endl;
+        }
+    }
+};
+
+// Top-level module
+SC_MODULE(toplevel) {
+    place p1, p2;
+    transition t1, t2;
+    
+    SC_CTOR(toplevel) : p1(1), p2(0), t1("t1"), t2("t2") {
+        t1.in.bind(p1);
+        t1.out.bind(p2);
+        t2.in.bind(p2);
+    }
+
+    void process() {
+        while (true) {
+            wait(10, SC_NS);
+            t1.fire();
+            wait(10, SC_NS);
+            t1.fire();
+            wait(10, SC_NS);
+            t2.fire();
+            sc_stop();
+        }
+    }
+};
+
+int sc_main(int argc, char* argv[]) {
+    toplevel t("t");
+    sc_start();
+    return 0;
+}
+
+Petri net b (multiports)
+
+#include <systemc.h>
+
+// Interface for the place
+class placeInterface : public sc_interface {
+public:
+    virtual void addTokens(unsigned int n) = 0;
+    virtual void removeTokens(unsigned int n) = 0;
+    virtual unsigned int testTokens() = 0;
+};
+
+// Implementation of place channel
+class place : public placeInterface {
+private:
+    unsigned int tokens;
+public:
+    place(unsigned int init_tokens) : tokens(init_tokens) {}
+
+    void addTokens(unsigned int n) override {
+        tokens += n;
+    }
+    
+    void removeTokens(unsigned int n) override {
+        if (tokens >= n) tokens -= n;
+    }
+    
+    unsigned int testTokens() override {
+        return tokens;
+    }
+};
+
+// Transition module with multiport support
+template<unsigned int N = 1, unsigned int M = 1>
+SC_MODULE(transition) {
+    sc_port<placeInterface, N, SC_ALL_BOUND> in;
+    sc_port<placeInterface, M, SC_ALL_BOUND> out;
+    
+    SC_CTOR(transition) {}
+    
+    void fire() {
+        bool can_fire = true;
+        for (unsigned int i = 0; i < N; i++) {
+            if (in[i]->testTokens() == 0) {
+                can_fire = false;
+                break;
+            }
+        }
+        if (can_fire) {
+            std::cout << name() << ": Fired" << std::endl;
+            for (unsigned int i = 0; i < N; i++) {
+                in[i]->removeTokens(1);
+            }
+            for (unsigned int i = 0; i < M; i++) {
+                out[i]->addTokens(1);
+            }
+        } else {
+            std::cout << name() << ": NOT Fired" << std::endl;
+        }
+    }
+};
+
+// Top-level module with extended Petri Net
+SC_MODULE(toplevel) {
+    place p1, p2, p3, p4;
+    transition<1, 1> t1;
+    transition<1, 1> t2;
+    transition<2, 1> t3;
+    
+    SC_CTOR(toplevel) : p1(1), p2(0), p3(0), p4(0), t1("t1"), t2("t2"), t3("t3") {
+        t1.in.bind(p1);
+        t1.out.bind(p2);
+        t2.in.bind(p2);
+        t2.out.bind(p3);
+        t3.in.bind(p1);
+        t3.in.bind(p3);
+        t3.out.bind(p4);
+    }
+
+    void process() {
+        while (true) {
+            wait(10, SC_NS);
+            t1.fire();
+            wait(10, SC_NS);
+            t2.fire();
+            wait(10, SC_NS);
+            t3.fire();
+            wait(10, SC_NS);
+            t2.fire();
+            sc_stop();
+        }
+    }
+};
+
+int sc_main(int argc, char* argv[]) {
+    toplevel t("t");
+    sc_start();
+    return 0;
+}
+weights
+
+#include <systemc.h>
+
+// Interface for the place
+class placeInterface : public sc_interface {
+public:
+    virtual void addTokens() = 0;
+    virtual void removeTokens() = 0;
+    virtual bool testTokens() = 0;
+};
+
+// Implementation of templated place channel
+template<unsigned int Win = 1, unsigned int Wout = 1>
+class place : public placeInterface {
+private:
+    unsigned int tokens;
+public:
+    place(unsigned int init_tokens) : tokens(init_tokens) {}
+
+    void addTokens() override {
+        tokens += Win;
+    }
+    
+    void removeTokens() override {
+        if (tokens >= Wout) tokens -= Wout;
+    }
+    
+    bool testTokens() override {
+        return tokens >= Wout;
+    }
+};
+
+// Transition module with multiport and weighted support
+template<unsigned int N = 1, unsigned int M = 1>
+SC_MODULE(transition) {
+    sc_port<placeInterface, N, SC_ALL_BOUND> in;
+    sc_port<placeInterface, M, SC_ALL_BOUND> out;
+    
+    SC_CTOR(transition) {}
+    
+    void fire() {
+        bool can_fire = true;
+        for (unsigned int i = 0; i < N; i++) {
+            if (!in[i]->testTokens()) {
+                can_fire = false;
+                break;
+            }
+        }
+        if (can_fire) {
+            std::cout << name() << ": Fired" << std::endl;
+            for (unsigned int i = 0; i < N; i++) {
+                in[i]->removeTokens();
+            }
+            for (unsigned int i = 0; i < M; i++) {
+                out[i]->addTokens();
+            }
+        } else {
+            std::cout << name() << ": NOT Fired" << std::endl;
+        }
+    }
+};
+
+// Top-level module with extended Petri Net and weighted channels
+SC_MODULE(toplevel) {
+    place<1,1> p1;
+    place<1,1> p2;
+    place<2,1> p3;
+    place<1,2> p4;
+    transition<1, 1> t1;
+    transition<1, 1> t2;
+    transition<2, 1> t3;
+    
+    SC_CTOR(toplevel) : p1(1), p2(0), p3(0), p4(0), t1("t1"), t2("t2"), t3("t3") {
+        t1.in.bind(p1);
+        t1.out.bind(p2);
+        t2.in.bind(p2);
+        t2.out.bind(p3);
+        t3.in.bind(p1);
+        t3.in.bind(p3);
+        t3.out.bind(p4);
+    }
+
+    void process() {
+        while (true) {
+            wait(10, SC_NS);
+            t1.fire();
+            wait(10, SC_NS);
+            t2.fire();
+            wait(10, SC_NS);
+            t3.fire();
+            wait(10, SC_NS);
+            t2.fire();
+            sc_stop();
+        }
+    }
+};
+
+int sc_main(int argc, char* argv[]) {
+    toplevel t("t");
+    sc_start();
+    return 0;
+}
+
+Memory bank
+
+#include <systemc.h>
+
+// Interface for the place
+class placeInterface : public sc_interface {
+public:
+    virtual void addTokens() = 0;
+    virtual void removeTokens() = 0;
+    virtual bool testTokens() = 0;
+};
+
+// Implementation of templated place channel
+template<unsigned int Win = 1, unsigned int Wout = 1>
+class place : public placeInterface {
+private:
+    unsigned int tokens;
+public:
+    place(unsigned int init_tokens) : tokens(init_tokens) {}
+
+    void addTokens() override {
+        tokens += Win;
+    }
+    
+    void removeTokens() override {
+        if (tokens >= Wout) tokens -= Wout;
+    }
+    
+    bool testTokens() override {
+        return tokens >= Wout;
+    }
+};
+
+// Transition module with multiport and weighted support
+template<unsigned int N = 1, unsigned int M = 1>
+SC_MODULE(transition) {
+    sc_port<placeInterface, N, SC_ALL_BOUND> in;
+    sc_port<placeInterface, M, SC_ALL_BOUND> out;
+    
+    SC_CTOR(transition) {}
+    
+    void fire() {
+        bool can_fire = true;
+        for (unsigned int i = 0; i < N; i++) {
+            if (!in[i]->testTokens()) {
+                can_fire = false;
+                break;
+            }
+        }
+        if (can_fire) {
+            std::cout << name() << ": Fired" << std::endl;
+            for (unsigned int i = 0; i < N; i++) {
+                in[i]->removeTokens();
+            }
+            for (unsigned int i = 0; i < M; i++) {
+                out[i]->addTokens();
+            }
+        } else {
+            std::cout << name() << ": NOT Fired" << std::endl;
+        }
+    }
+};
+
+// Memory bank Petri Net model
+SC_MODULE(memory_bank) {
+    place<1, 1> IDLE, ACTIVE, READ, WRITE, PRECHARGE;
+    transition<1, 1> ACT, RD, WR, PRE;
+    
+    SC_CTOR(memory_bank) : IDLE(1), ACTIVE(0), READ(0), WRITE(0), PRECHARGE(0),
+        ACT("ACT"), RD("RD"), WR("WR"), PRE("PRE") {
+        
+        ACT.in.bind(IDLE);
+        ACT.out.bind(ACTIVE);
+        RD.in.bind(ACTIVE);
+        RD.out.bind(READ);
+        WR.in.bind(ACTIVE);
+        WR.out.bind(WRITE);
+        PRE.in.bind(ACTIVE);
+        PRE.out.bind(PRECHARGE);
+    }
+};
+
+// Top-level module
+SC_MODULE(toplevel) {
+    memory_bank mem_bank;
+    
+    SC_CTOR(toplevel) : mem_bank("mem_bank") {
+        SC_THREAD(process);
+    }
+
+    void process() {
+        while (true) {
+            wait(10, SC_NS);
+            mem_bank.ACT.fire();
+            wait(10, SC_NS);
+            mem_bank.ACT.fire();
+            wait(10, SC_NS);
+            mem_bank.RD.fire();
+            wait(10, SC_NS);
+            mem_bank.WR.fire();
+            wait(10, SC_NS);
+            mem_bank.PRE.fire();
+            wait(10, SC_NS);
+            mem_bank.ACT.fire();
+            sc_stop();
+        }
+    }
+};
+
+int sc_main(int argc, char* argv[]) {
+    toplevel t("t");
+    sc_start();
+    return 0;
+}
+
+Implementation of Inhibitor Arcs
+
+#include <systemc.h>
+
+// Interface for the place
+class placeInterface : public sc_interface {
+public:
+    virtual void addTokens() = 0;
+    virtual void removeTokens() = 0;
+    virtual bool testTokens() = 0;
+};
+
+// Implementation of templated place channel
+template<unsigned int Win = 1, unsigned int Wout = 1>
+class place : public placeInterface {
+private:
+    unsigned int tokens;
+public:
+    place(unsigned int init_tokens) : tokens(init_tokens) {}
+
+    void addTokens() override {
+        tokens += Win;
+    }
+    
+    void removeTokens() override {
+        if (tokens >= Wout) tokens -= Wout;
+    }
+    
+    bool testTokens() override {
+        return tokens >= Wout;
+    }
+};
+
+// Transition module with multiport, weighted, and inhibitor support
+template<unsigned int N = 1, unsigned int M = 1, unsigned int L = 0>
+SC_MODULE(transition) {
+    sc_port<placeInterface, N, SC_ALL_BOUND> in;
+    sc_port<placeInterface, M, SC_ALL_BOUND> out;
+    sc_port<placeInterface, L, SC_ZERO_OR_MORE_BOUND> inhibitors;
+    
+    SC_CTOR(transition) {}
+    
+    void fire() {
+        bool can_fire = true;
+        for (unsigned int i = 0; i < N; i++) {
+            if (!in[i]->testTokens()) {
+                can_fire = false;
+                break;
+            }
+        }
+        for (unsigned int i = 0; i < L; i++) {
+            if (inhibitors[i]->testTokens()) {
+                can_fire = false;
+                break;
+            }
+        }
+        if (can_fire) {
+            std::cout << name() << ": Fired" << std::endl;
+            for (unsigned int i = 0; i < N; i++) {
+                in[i]->removeTokens();
+            }
+            for (unsigned int i = 0; i < M; i++) {
+                out[i]->addTokens();
+            }
+        } else {
+            std::cout << name() << ": NOT Fired" << std::endl;
+        }
+    }
+};
+
+// Memory bank Petri Net model with inhibitor arcs
+SC_MODULE(memory_bank) {
+    place<1, 1> IDLE, ACTIVE, READ, WRITE, PRECHARGE;
+    transition<1, 1> ACT;
+    transition<1, 1, 1> RD, WR;
+    transition<1, 1> PRE;
+    
+    SC_CTOR(memory_bank) : IDLE(1), ACTIVE(0), READ(0), WRITE(0), PRECHARGE(0),
+        ACT("ACT"), RD("RD"), WR("WR"), PRE("PRE") {
+        
+        ACT.in.bind(IDLE);
+        ACT.out.bind(ACTIVE);
+        RD.in.bind(ACTIVE);
+        RD.out.bind(READ);
+        RD.inhibitors.bind(WRITE);
+        WR.in.bind(ACTIVE);
+        WR.out.bind(WRITE);
+        WR.inhibitors.bind(READ);
+        PRE.in.bind(ACTIVE);
+        PRE.out.bind(PRECHARGE);
+    }
+};
+
+// Top-level module
+SC_MODULE(toplevel) {
+    memory_bank mem_bank;
+    
+    SC_CTOR(toplevel) : mem_bank("mem_bank") {
+        SC_THREAD(process);
+    }
+
+    void process() {
+        while (true) {
+            wait(10, SC_NS);
+            mem_bank.ACT.fire();
+            wait(10, SC_NS);
+            mem_bank.ACT.fire();
+            wait(10, SC_NS);
+            mem_bank.RD.fire();
+            wait(10, SC_NS);
+            mem_bank.WR.fire();
+            wait(10, SC_NS);
+            mem_bank.PRE.fire();
+            wait(10, SC_NS);
+            mem_bank.ACT.fire();
+            sc_stop();
+        }
+    }
+};
+
+int sc_main(int argc, char* argv[]) {
+    toplevel t("t");
+    sc_start();
+    return 0;
+}
+
+subnet 
+
+#include <systemc.h>
+
+// Interface for the place
+class placeInterface : public sc_interface {
+public:
+    virtual void addTokens() = 0;
+    virtual void removeTokens() = 0;
+    virtual bool testTokens() = 0;
+};
+
+// Implementation of templated place channel
+template<unsigned int Win = 1, unsigned int Wout = 1>
+class place : public placeInterface {
+private:
+    unsigned int tokens;
+public:
+    place(unsigned int init_tokens) : tokens(init_tokens) {}
+
+    void addTokens() override {
+        tokens += Win;
+    }
+    
+    void removeTokens() override {
+        if (tokens >= Wout) tokens -= Wout;
+    }
+    
+    bool testTokens() override {
+        return tokens >= Wout;
+    }
+};
+
+// Transition module with multiport, weighted, and inhibitor support
+template<unsigned int N = 1, unsigned int M = 1, unsigned int L = 0>
+SC_MODULE(transition) {
+    sc_port<placeInterface, N, SC_ALL_BOUND> in;
+    sc_port<placeInterface, M, SC_ALL_BOUND> out;
+    sc_port<placeInterface, L, SC_ZERO_OR_MORE_BOUND> inhibitors;
+    
+    SC_CTOR(transition) {}
+    
+    void fire() {
+        bool can_fire = true;
+        for (unsigned int i = 0; i < N; i++) {
+            if (!in[i]->testTokens()) {
+                can_fire = false;
+                break;
+            }
+        }
+        for (unsigned int i = 0; i < L; i++) {
+            if (inhibitors[i]->testTokens()) {
+                can_fire = false;
+                break;
+            }
+        }
+        if (can_fire) {
+            std::cout << name() << ": Fired" << std::endl;
+            for (unsigned int i = 0; i < N; i++) {
+                in[i]->removeTokens();
+            }
+            for (unsigned int i = 0; i < M; i++) {
+                out[i]->addTokens();
+            }
+        } else {
+            std::cout << name() << ": NOT Fired" << std::endl;
+        }
+    }
+};
+
+// Subnet module for hierarchical PN
+SC_MODULE(subnet) {
+    place<1, 1> IDLE, ACTIVE, READ, WRITE, PRECHARGE;
+    transition<1, 1> ACT;
+    transition<1, 1, 1> RD, WR;
+    transition<1, 1> PRE;
+    
+    SC_CTOR(subnet) : IDLE(1), ACTIVE(0), READ(0), WRITE(0), PRECHARGE(0),
+        ACT("ACT"), RD("RD"), WR("WR"), PRE("PRE") {
+        
+        ACT.in.bind(IDLE);
+        ACT.out.bind(ACTIVE);
+        RD.in.bind(ACTIVE);
+        RD.out.bind(READ);
+        RD.inhibitors.bind(WRITE);
+        WR.in.bind(ACTIVE);
+        WR.out.bind(WRITE);
+        WR.inhibitors.bind(READ);
+        PRE.in.bind(ACTIVE);
+        PRE.out.bind(PRECHARGE);
+    }
+};
+
+// Top-level module with hierarchical subnets
+SC_MODULE(toplevel) {
+    subnet s1, s2;
+    
+    SC_CTOR(toplevel) : s1("s1"), s2("s2") {
+        SC_THREAD(process);
+    }
+
+    void process() {
+        while (true) {
+            wait(10, SC_NS);
+            s1.ACT.fire();
+            wait(10, SC_NS);
+            s1.ACT.fire();
+            wait(10, SC_NS);
+            s1.RD.fire();
+            wait(10, SC_NS);
+            s1.WR.fire();
+            wait(10, SC_NS);
+            s1.PRE.fire();
+            wait(10, SC_NS);
+            s1.ACT.fire();
+            wait(10, SC_NS);
+            s2.ACT.fire();
+            wait(10, SC_NS);
+            s2.ACT.fire();
+            wait(10, SC_NS);
+            s1.PRE.fire();
+            wait(10, SC_NS);
+            s2.PRE.fire();
+            wait(10, SC_NS);
+            sc_stop();
+        }
+    }
+};
+
+int sc_main(int argc, char* argv[]) {
+    toplevel t("t");
+    sc_start();
+    return 0;
+}
+
+

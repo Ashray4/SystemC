@@ -1,0 +1,202 @@
+NAND
+#ifndef NAND_H
+#define NAND_H
+
+#include <systemc.h>
+
+SC_MODULE(nand)
+{
+    // Inputs and Outputs for the nands
+    sc_in<bool> A;
+    sc_in<bool> B;
+    sc_out<bool> F; // Output of the AND nand, input to the OR nand
+
+    // Constructor
+    SC_CTOR(nand) : A("A"), B("B"), F("F")
+    {
+        // Define AND nand behavior
+        SC_METHOD(do_and);
+        sensitive << A << B;
+    }
+
+    // AND nand behavior
+    void do_and()
+    {
+        F.write(and_result.read()); // Output of the AND nand feeds into the OR nand
+    }
+
+};
+
+#endif
+
+XOR gate 
+
+#ifndef EXOR_H
+#define EXOR_H
+
+#include <systemc.h>
+
+#include "nand.h"
+
+SC_MODULE(XOR_Gate) {
+    sc_in<bool> A, B;
+    sc_out<bool> Z;
+
+    sc_signal<bool> h1, h2, h3;
+
+    nand nand1, nand2, nand3, nand4;
+
+    SC_CTOR(XOR_Gate) A("A"), B("B"),
+        nand1("nand1"), nand2("nand2"), nand3("nand3"), nand4("nand4"),
+        h1("h1"), h2("h2") {
+        nand1 = new NAND_Gate("NAND1");
+        nand2 = new NAND_Gate("NAND2");
+        nand3 = new NAND_Gate("NAND3");
+        nand4 = new NAND_Gate("NAND4");
+
+        nand1.in.bind(A);
+        nand1.in.bind(B);
+        nand1.out.bind(h1);
+
+        nand2.in.bind(A);
+        nand2.in.bind(h1);
+        nand2.out.bind(h2);
+
+        nand2.in.bind(h1);
+        nand2.in.bind(B);
+        nand2.out.bind(h3);
+
+        nand3.in.bind(h1);
+        nand3.in.bind(h2);
+        nand3.out.bind(Z);
+    }
+};
+
+#endif // EXOR_H
+
+main xor
+
+#include <systemc.h>
+
+#include "stim.h"
+#include "exor.h"
+#include "mon.h"
+
+int sc_main(int, char**)
+{
+    sc_signal<bool> sigA, sigB, sigZ;
+
+    stim Stim1("Stimulus");
+    Stim1.A(sigA);
+    Stim1.B(sigB);
+
+    exor DUT("exor");
+    DUT.A(sigA);
+    DUT.B(sigB);
+    DUT.Z(sigZ);
+
+    Monitor mon("Monitor");
+    mon.A(sigA);
+    mon.B(sigB);
+    mon.Z(sigZ);
+
+    sc_start();  // run forever
+
+    return 0;
+}
+
+Task 3 waveform feauture
+
+example with clock
+
+int sc_main ()
+{
+clockGenerator g("clock_1GHz", sc_time(1,SC_NS));
+sc_signal<bool> clk;
+// Bind Signals
+g.clk.bind(clk);
+// Setup Waveform Tracing:
+sc_trace_file *wf = sc_create_vcd_trace_file("trace");
+sc_trace(wf, clk, "clk");
+// Start Simulation
+sc_start(10, SC_NS);
+// Close Trace File:
+sc_close_vcd_trace_file(wf);
+return 0;
+}
+
+Task 4 adding clock positive edge
+stim.h
+#ifndef STIMULUS_H
+#define STIMULUS_H
+
+#include <systemc.h>
+
+SC_MODULE(stim)
+{
+public:
+    sc_in<clock> A, B;
+    sc_out<bool> A, B;
+
+    SC_CTOR(stim)
+    {
+        SC_THREAD(StimGen);
+	sensitive << clk.pos();
+    }
+
+private:
+    void StimGen()
+    {
+        wait(SC_ZERO_TIME);
+        A.write(false);
+        B.write(false);
+        wait();
+        A.write(false);
+        B.write(true);
+        wait();
+        A.write(true);
+        B.write(false);
+        wait();
+        A.write(true);
+        B.write(true);
+        wait();
+        A.write(false);
+        B.write(false);
+        wait();
+        sc_stop();
+    }
+};
+
+#endif
+mon.h
+#ifndef MONITOR_H
+#define MONITOR_H
+
+#include <iostream>
+#include <systemc.h>
+
+SC_MODULE(Monitor)
+{
+public:
+    sc_in<bool> A, B, Z;
+
+    SC_CTOR(Monitor)
+    {
+        std::cout << std::endl <<  "time\tA\tB\tF" << std::endl;
+        SC_METHOD(monitor);
+        sensitive << A << B << Z << clk.pos() ;
+        dont_initialize();
+    }
+
+private:
+    void monitor()
+    {
+        std::cout << sc_time_stamp()  << "\t" << A << "\t" << B << "\t" << Z << std::endl;
+    }
+};
+
+#endif
+
+in main 
+sc_clock clock("Clk", 10, SC_NS, 0.5)
+
